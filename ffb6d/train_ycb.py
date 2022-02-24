@@ -97,13 +97,13 @@ parser.add_argument("-view_dpt", action="store_true")
 parser.add_argument('-debug', action='store_true')
 
 parser.add_argument('--local_rank', type=int, default=0)
-parser.add_argument('--gpu_id', type=list, default=[0, 1, 2, 3, 4, 5, 6, 7])
+parser.add_argument('--gpu_id', type=list, default=[1])
 parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N')
 parser.add_argument('-g', '--gpus', default=8, type=int,
                     help='number of gpus per node')
 parser.add_argument('-nr', '--nr', default=0, type=int,
                     help='ranking within the nodes')
-parser.add_argument('--gpu', type=str, default="0,1,2,3,4,5,6,7")
+parser.add_argument('--gpu', type=str, default="1")
 parser.add_argument('--deterministic', action='store_true')
 parser.add_argument('--keep_batchnorm_fp32', default=True)
 parser.add_argument('--opt_level', default="O0", type=str,
@@ -351,7 +351,7 @@ class Trainer(object):
         total_loss = 0.0
         count = 1
         for i, data in tqdm.tqdm(
-            enumerate(d_loader), leave=False, desc="val"
+            enumerate(d_loader), total=len(d_loader), leave=False, desc="val"
         ):
             count += 1
             self.optimizer.zero_grad()
@@ -391,7 +391,8 @@ class Trainer(object):
                 for k, v in acc_dict.items():
                     print(k, v, file=of)
         if args.local_rank == 0:
-            writer.add_scalars('val_acc', acc_dict, it)
+            #writer.add_scalars('val_acc', acc_dict, it)
+            pass
 
         return total_loss / count, eval_dict
 
@@ -441,82 +442,71 @@ class Trainer(object):
 
         it = start_it
         _, eval_frequency = is_to_eval(0, it)
+        print(eval_frequency)
 
-        with tqdm.tqdm(range(config.n_total_epoch), desc="epochs") as tbar, tqdm.tqdm(
-            total=eval_frequency, leave=False, desc="train"
-        ) as pbar:
-            for epoch in tbar:
-                if epoch > config.n_total_epoch:
-                    break
-                if train_sampler is not None:
-                    train_sampler.set_epoch(epoch)
-                # Reset numpy seed.
-                # REF: https://github.com/pytorch/pytorch/issues/5059
-                np.random.seed()
-                if log_epoch_f is not None:
-                    os.system("echo {} > {}".format(epoch, log_epoch_f))
-                for batch in train_loader:
-                    self.model.train()
+        for epoch in range(config.n_total_epoch):
+            if epoch > config.n_total_epoch:
+                break
+            if train_sampler is not None:
+                train_sampler.set_epoch(epoch)
+            # Reset numpy seed.
+            # REF: https://github.com/pytorch/pytorch/issues/5059
+            np.random.seed()
+            if log_epoch_f is not None:
+                os.system("echo {} > {}".format(epoch, log_epoch_f))
+            print("Epoch {}".format(epoch))
+            pbar = tqdm.tqdm(train_loader, total=len(train_loader), leave=False, desc="Train")
+            for batch in pbar:
+                self.model.train()
 
-                    self.optimizer.zero_grad()
-                    _, loss, res = self.model_fn(self.model, batch, it=it)
+                self.optimizer.zero_grad()
+                _, loss, res = self.model_fn(self.model, batch, it=it)
+                pbar.set_postfix(loss=loss.item())
 
-                    with amp.scale_loss(loss, self.optimizer) as scaled_loss:
-                        scaled_loss.backward()
-                    lr = get_lr(self.optimizer)
-                    if args.local_rank == 0:
-                        writer.add_scalar('lr/lr', lr, it)
+                with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                    scaled_loss.backward()
+                lr = get_lr(self.optimizer)
+                if args.local_rank == 0:
+                    writer.add_scalar('lr/lr', lr, it)
 
-                    self.optimizer.step()
+                self.optimizer.step()
 
-                    if self.lr_scheduler is not None:
-                        self.lr_scheduler.step(it)
+                if self.lr_scheduler is not None:
+                    self.lr_scheduler.step(it)
 
-                    if self.bnm_scheduler is not None:
-                        self.bnm_scheduler.step(it)
+                if self.bnm_scheduler is not None:
+                    self.bnm_scheduler.step(it)
 
-                    it += 1
+                it += 1
 
-                    pbar.update()
-                    pbar.set_postfix(dict(total_it=it))
-                    tbar.refresh()
+                if self.viz is not None:
+                    self.viz.update("train", it, res)
 
-                    if self.viz is not None:
-                        self.viz.update("train", it, res)
+                #eval_flag, eval_frequency = is_to_eval(epoch, it)
+            if test_loader is not None:
+                val_loss, res = self.eval_epoch(test_loader, it=it)
+                print("val_loss", val_loss)
 
-                    eval_flag, eval_frequency = is_to_eval(epoch, it)
-                    if eval_flag:
-                        pbar.close()
-
-                        if test_loader is not None:
-                            val_loss, res = self.eval_epoch(test_loader, it=it)
-                            print("val_loss", val_loss)
-
-                            is_best = val_loss < best_loss
-                            best_loss = min(best_loss, val_loss)
-                            if args.local_rank == 0:
-                                save_checkpoint(
-                                    checkpoint_state(
-                                        self.model, self.optimizer, val_loss, epoch, it
-                                    ),
-                                    is_best,
-                                    filename=self.checkpoint_name,
-                                    bestname=self.best_name+'_%.4f' % val_loss,
-                                    bestname_pure=self.best_name
-                                )
-                                info_p = self.checkpoint_name.replace(
-                                    '.pth.tar', '_epoch.txt'
-                                )
-                                os.system(
-                                    'echo {} {} >> {}'.format(
-                                        it, val_loss, info_p
-                                    )
-                                )
-
-                        pbar = tqdm.tqdm(
-                            total=eval_frequency, leave=False, desc="train"
+                is_best = val_loss < best_loss
+                best_loss = min(best_loss, val_loss)
+                if args.local_rank == 0:
+                    save_checkpoint(
+                        checkpoint_state(
+                            self.model, self.optimizer, val_loss, epoch, it
+                        ),
+                        is_best,
+                        filename=self.checkpoint_name,
+                        bestname=self.best_name+'_%.4f' % val_loss,
+                        bestname_pure=self.best_name
+                    )
+                    info_p = self.checkpoint_name.replace(
+                        '.pth.tar', '_epoch.txt'
+                    )
+                    os.system(
+                        'echo {} {} >> {}'.format(
+                            it, val_loss, info_p
                         )
-                        pbar.set_postfix(dict(total_it=it))
+                    )
 
             if args.local_rank == 0:
                 writer.export_scalars_to_json("./all_scalars.json")

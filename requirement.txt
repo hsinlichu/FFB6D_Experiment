@@ -2,8 +2,6 @@ h5py
 numpy
 torch==1.4.0
 torchvision==0.2.0
-yaml
-pprint
 enum34
 future
 scipy==1.4.1
@@ -16,5 +14,4 @@ setuptools==41.0.0
 cffi==1.11.5
 easydict==1.7
 plyfile==0.6
-glumpy==1.0.6
 pillow==8.2.0
