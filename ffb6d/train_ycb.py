@@ -504,9 +504,9 @@ class Trainer(object):
 
                 eval_flag, eval_frequency = is_to_eval(epoch, it)
                 if eval_flag and test_loader is not None:
-                    logger.info("Iteration {} train loss {}".format(it, loss))
+                    logger.info("Epoch {} Iteration {} train loss {}".format(epoch, it, loss))
                     val_loss, res = self.eval_epoch(test_loader, it=it)
-                    logger.info("Iteration {} val loss {}".format(it, val_loss))
+                    logger.info("Epoch {} Iteration {} val loss {}".format(epoch, it, val_loss))
 
                     is_best = val_loss < best_loss
                     best_loss = min(best_loss, val_loss)
@@ -517,7 +517,7 @@ class Trainer(object):
                             ),
                             is_best,
                             filename=self.checkpoint_name,
-                            bestname=self.best_name + '_{}_{:.4f}'.format(it, val_loss),
+                            bestname=self.best_name + '_{}_{}_{:.4f}'.format(epoch, it, val_loss),
                         )
 
             if args.local_rank == 0:
