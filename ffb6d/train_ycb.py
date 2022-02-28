@@ -39,6 +39,11 @@ from apex.parallel import convert_syncbn_model
 from apex import amp
 from apex.multi_tensor_apply import multi_tensor_applier
 
+from pathlib import Path
+from datetime import datetime
+import logging
+logger = logging.getLogger()
+
 
 config = Config()
 bs_utils = Basic_Utils(config)
@@ -97,9 +102,9 @@ parser.add_argument("-view_dpt", action="store_true")
 parser.add_argument('-debug', action='store_true')
 
 parser.add_argument('--local_rank', type=int, default=0)
-parser.add_argument('--gpu_id', type=list, default=[1])
+parser.add_argument('--gpu_id', type=list, default=[0])
 parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N')
-parser.add_argument('-g', '--gpus', default=8, type=int,
+parser.add_argument('-g', '--gpus', default=1, type=int,
                     help='number of gpus per node')
 parser.add_argument('-nr', '--nr', default=0, type=int,
                     help='ranking within the nodes')
@@ -108,11 +113,26 @@ parser.add_argument('--deterministic', action='store_true')
 parser.add_argument('--keep_batchnorm_fp32', default=True)
 parser.add_argument('--opt_level', default="O0", type=str,
                     help='opt level of apex mix presision trainig.')
+parser.add_argument('--comment', type=str, default="")
 
 args = parser.parse_args()
 
-os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+#os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+comment = "{}_{}".format(str(datetime.now().strftime(r'%m%d_%H%M%S')), args.comment)
 
+resultDirPath = Path("train_log/") / "ycb" / "log" / comment
+resultDirPath.mkdir(parents=True, exist_ok=True)
+
+logger.setLevel(logging.INFO)
+logFormatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+fileHandler = logging.FileHandler(resultDirPath / "info.log")
+fileHandler.setFormatter(logFormatter)
+logger.addHandler(fileHandler)
+
+consoleHandler = logging.StreamHandler()
+consoleHandler.setFormatter(logFormatter)
+logger.addHandler(consoleHandler)
 
 lr_clip = 1e-5
 bnm_clip = 1e-2
@@ -130,11 +150,14 @@ def get_lr(optimizer):
 def checkpoint_state(model=None, optimizer=None, best_prec=None, epoch=None, it=None):
     optim_state = optimizer.state_dict() if optimizer is not None else None
     if model is not None:
+        '''
         if isinstance(model, torch.nn.DataParallel) or \
                 isinstance(model, torch.nn.parallel.DistributedDataParallel):
             model_state = model.module.state_dict()
         else:
             model_state = model.state_dict()
+        '''
+        model_state = model.state_dict()
     else:
         model_state = None
 
@@ -155,15 +178,16 @@ def save_checkpoint(
     filename = "{}.pth.tar".format(filename)
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, "{}.pth.tar".format(bestname))
-        shutil.copyfile(filename, "{}.pth.tar".format(bestname_pure))
+        bestSaveName = "{}.pth.tar".format(bestname)
+        shutil.copyfile(filename, bestSaveName)
+        logger.info("Current Best Save to: {}".format(bestSaveName))
 
 
 def load_checkpoint(model=None, optimizer=None, filename="checkpoint"):
     filename = "{}.pth.tar".format(filename)
 
     if os.path.isfile(filename):
-        print("==> Loading from checkpoint '{}'".format(filename))
+        logger.info("==> Loading from checkpoint '{}'".format(filename))
         checkpoint = torch.load(filename)
         epoch = checkpoint["epoch"]
         it = checkpoint.get("it", 0.0)
@@ -179,10 +203,10 @@ def load_checkpoint(model=None, optimizer=None, filename="checkpoint"):
         if optimizer is not None and checkpoint["optimizer_state"] is not None:
             optimizer.load_state_dict(checkpoint["optimizer_state"])
         amp.load_state_dict(checkpoint["amp"])
-        print("==> Done")
+        logger.info("==> Done")
         return it, epoch, best_prec
     else:
-        print("==> Checkpoint '{}' not found".format(filename))
+        logger.info("==> Checkpoint '{}' not found".format(filename))
         return None
 
 
@@ -376,7 +400,7 @@ class Trainer(object):
             if 'acc' in k:
                 acc_dict[k] = v
         for k, v in mean_eval_dict.items():
-            print(k, v)
+            logger.info('{} {}'.format(k, v))
 
         if is_test:
             if test_pose:
@@ -389,7 +413,7 @@ class Trainer(object):
                 seg_res_fn += '_%s%.2f' % (k, v)
             with open(os.path.join(config.log_eval_dir, seg_res_fn), 'w') as of:
                 for k, v in acc_dict.items():
-                    print(k, v, file=of)
+                    logger.info(k, v, file=of)
         if args.local_rank == 0:
             #writer.add_scalars('val_acc', acc_dict, it)
             pass
@@ -426,7 +450,7 @@ class Trainer(object):
             Testing loss of the best model
         """
 
-        print("Totally train %d iters per gpu." % tot_iter)
+        logger.info("Totally train %d iters per gpu." % tot_iter)
 
         def is_to_eval(epoch, it):
             # Eval after first 100 iters to test eval function.
@@ -442,7 +466,6 @@ class Trainer(object):
 
         it = start_it
         _, eval_frequency = is_to_eval(0, it)
-        print(eval_frequency)
 
         for epoch in range(config.n_total_epoch):
             if epoch > config.n_total_epoch:
@@ -452,10 +475,7 @@ class Trainer(object):
             # Reset numpy seed.
             # REF: https://github.com/pytorch/pytorch/issues/5059
             np.random.seed()
-            if log_epoch_f is not None:
-                os.system("echo {} > {}".format(epoch, log_epoch_f))
-            print("Epoch {}".format(epoch))
-            pbar = tqdm.tqdm(train_loader, total=len(train_loader), leave=False, desc="Train")
+            pbar = tqdm.tqdm(train_loader, total=len(train_loader), leave=False, desc="Train|Epoch {}".format(epoch))
             for batch in pbar:
                 self.model.train()
 
@@ -482,31 +502,23 @@ class Trainer(object):
                 if self.viz is not None:
                     self.viz.update("train", it, res)
 
-                #eval_flag, eval_frequency = is_to_eval(epoch, it)
-            if test_loader is not None:
-                val_loss, res = self.eval_epoch(test_loader, it=it)
-                print("val_loss", val_loss)
+                eval_flag, eval_frequency = is_to_eval(epoch, it)
+                if eval_flag and test_loader is not None:
+                    logger.info("Iteration {} train loss {}".format(it, loss))
+                    val_loss, res = self.eval_epoch(test_loader, it=it)
+                    logger.info("Iteration {} val loss {}".format(it, val_loss))
 
-                is_best = val_loss < best_loss
-                best_loss = min(best_loss, val_loss)
-                if args.local_rank == 0:
-                    save_checkpoint(
-                        checkpoint_state(
-                            self.model, self.optimizer, val_loss, epoch, it
-                        ),
-                        is_best,
-                        filename=self.checkpoint_name,
-                        bestname=self.best_name+'_%.4f' % val_loss,
-                        bestname_pure=self.best_name
-                    )
-                    info_p = self.checkpoint_name.replace(
-                        '.pth.tar', '_epoch.txt'
-                    )
-                    os.system(
-                        'echo {} {} >> {}'.format(
-                            it, val_loss, info_p
+                    is_best = val_loss < best_loss
+                    best_loss = min(best_loss, val_loss)
+                    if args.local_rank == 0:
+                        save_checkpoint(
+                            checkpoint_state(
+                                self.model, self.optimizer, val_loss, epoch, it
+                            ),
+                            is_best,
+                            filename=self.checkpoint_name,
+                            bestname=self.best_name + '_{}_{:.4f}'.format(it, val_loss),
                         )
-                    )
 
             if args.local_rank == 0:
                 writer.export_scalars_to_json("./all_scalars.json")
@@ -515,7 +527,7 @@ class Trainer(object):
 
 
 def train():
-    print("local_rank:", args.local_rank)
+    logger.info("local_rank: {}".format(args.local_rank))
     cudnn.benchmark = True
     if args.deterministic:
         cudnn.benchmark = False
@@ -523,25 +535,29 @@ def train():
         torch.manual_seed(args.local_rank)
         torch.set_printoptions(precision=10)
     torch.cuda.set_device(args.local_rank)
+    '''
     torch.distributed.init_process_group(
         backend='nccl',
         init_method='env://',
     )
+    '''
     torch.manual_seed(0)
 
     if not args.eval_net:
         train_ds = dataset_desc.Dataset('train')
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds)
+        #train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds)
+        train_sampler = None#torch.utils.data.Sampler(train_ds)
         train_loader = torch.utils.data.DataLoader(
             train_ds, batch_size=config.mini_batch_size, shuffle=False,
-            drop_last=True, num_workers=4, sampler=train_sampler, pin_memory=True
+            drop_last=True, num_workers=8, sampler=train_sampler, pin_memory=True
         )
 
         val_ds = dataset_desc.Dataset('test')
-        val_sampler = torch.utils.data.distributed.DistributedSampler(val_ds)
+        #val_sampler = torch.utils.data.distributed.DistributedSampler(val_ds)
+        val_sampler = None#torch.utils.data.Sampler(val_ds)
         val_loader = torch.utils.data.DataLoader(
             val_ds, batch_size=config.val_mini_batch_size, shuffle=False,
-            drop_last=False, num_workers=4, sampler=val_sampler
+            drop_last=False, num_workers=8, sampler=val_sampler
         )
     else:
         test_ds = dataset_desc.Dataset('test')
@@ -557,7 +573,7 @@ def train():
     )
     model = convert_syncbn_model(model)
     device = torch.device('cuda:{}'.format(args.local_rank))
-    print('local_rank:', args.local_rank)
+    logger.info('local_rank: {}'.format(args.local_rank))
     model.to(device)
     optimizer = optim.Adam(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay
@@ -583,10 +599,12 @@ def train():
             assert checkpoint_status is not None, "Failed loadding model."
 
     if not args.eval_net:
+        '''
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[args.local_rank], output_device=args.local_rank,
             find_unused_parameters=True
         )
+        '''
         clr_div = 6
         lr_scheduler = CyclicLR(
             optimizer, base_lr=1e-5, max_lr=1e-3,
@@ -619,14 +637,12 @@ def train():
             args.test,
         )
 
-    checkpoint_fd = config.log_model_dir
-
     trainer = Trainer(
         model,
         model_fn,
         optimizer,
-        checkpoint_name=os.path.join(checkpoint_fd, "FFB6D"),
-        best_name=os.path.join(checkpoint_fd, "FFB6D_best"),
+        checkpoint_name=os.path.join(resultDirPath, "FFB6D"),
+        best_name=os.path.join(resultDirPath, "FFB6D_best"),
         lr_scheduler=lr_scheduler,
         bnm_scheduler=bnm_scheduler,
     )
@@ -637,7 +653,7 @@ def train():
             test_loader, is_test=True, test_pose=args.test_pose
         )
         end = time.time()
-        print("\nUse time: ", end - start, 's')
+        logger.info("Use time: {}s".format(end - start))
     else:
         trainer.train(
             it, start_epoch, config.n_total_epoch, train_loader, None,
