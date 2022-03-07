@@ -26,7 +26,7 @@ import torch.backends.cudnn as cudnn
 from tensorboardX import SummaryWriter
 
 from common import Config, ConfigRandLA
-import datasets.ycb.ycb_dataset as dataset_desc
+from datasets.ycb.ycb_dataset import CroppedDataset as Dataset
 from utils.pvn3d_eval_utils_kpls import TorchEval
 from utils.basic_utils import Basic_Utils
 
@@ -544,26 +544,26 @@ def train():
     torch.manual_seed(0)
 
     if not args.eval_net:
-        train_ds = dataset_desc.Dataset('train')
+        train_ds = Dataset('train')
         #train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds)
         train_sampler = None#torch.utils.data.Sampler(train_ds)
         train_loader = torch.utils.data.DataLoader(
             train_ds, batch_size=config.mini_batch_size, shuffle=False,
-            drop_last=True, num_workers=8, sampler=train_sampler, pin_memory=True
+            drop_last=True, num_workers=4, sampler=train_sampler, pin_memory=True
         )
 
-        val_ds = dataset_desc.Dataset('test')
+        val_ds = Dataset('test')
         #val_sampler = torch.utils.data.distributed.DistributedSampler(val_ds)
         val_sampler = None#torch.utils.data.Sampler(val_ds)
         val_loader = torch.utils.data.DataLoader(
             val_ds, batch_size=config.val_mini_batch_size, shuffle=False,
-            drop_last=False, num_workers=8, sampler=val_sampler
+            drop_last=False, num_workers=4, sampler=val_sampler
         )
     else:
-        test_ds = dataset_desc.Dataset('test')
+        test_ds = Dataset('test')
         test_loader = torch.utils.data.DataLoader(
             test_ds, batch_size=config.test_mini_batch_size, shuffle=False,
-            num_workers=20
+            num_workers=4
         )
 
     rndla_cfg = ConfigRandLA

@@ -5,6 +5,7 @@ import torch
 import os.path
 import numpy as np
 import torchvision.transforms as transforms
+import PIL
 from PIL import Image
 from common import Config
 import pickle as pkl
@@ -17,6 +18,8 @@ except:
     from cv2 import imshow, waitKey
 import normalSpeed
 from models.RandLA.helper_tool import DataProcessing as DP
+
+import numpy.ma as ma
 
 
 config = Config(ds_name='ycb')
@@ -177,8 +180,12 @@ class Dataset():
 
     def get_item(self, item_name):
         with Image.open(os.path.join(self.root, item_name+'-depth.png')) as di:
+            #di = di.transpose(PIL.Image.FLIP_TOP_BOTTOM)
+            #di = di.rotate(90)
             dpt_um = np.array(di)
         with Image.open(os.path.join(self.root, item_name+'-label.png')) as li:
+            #li = li.transpose(PIL.Image.FLIP_TOP_BOTTOM)
+            #li = li.rotate(90)
             labels = np.array(li)
         rgb_labels = labels.copy()
         meta = scio.loadmat(os.path.join(self.root, item_name+'-meta.mat'))
@@ -188,6 +195,8 @@ class Dataset():
             K = config.intrinsic_matrix['ycb_K1']
 
         with Image.open(os.path.join(self.root, item_name+'-color.png')) as ri:
+            #ri = ri.transpose(PIL.Image.FLIP_TOP_BOTTOM)
+            #ri = ri.rotate(90)
             if self.add_noise:
                 ri = self.trancolor(ri)
             rgb = np.array(ri)[:, :, :3]
@@ -268,7 +277,7 @@ class Dataset():
 
         rgb_ds_sr = [4, 8, 8, 8]
         n_ds_layers = 4
-        pcld_sub_s_r = [4, 4, 4, 4]
+        pcld_sub_o_r = [4, 4, 4, 4]
         inputs = {}
         # DownSample stage
         for i in range(n_ds_layers):
@@ -400,6 +409,197 @@ class Dataset():
             item_name = self.all_lst[idx]
             return self.get_item(item_name)
 
+class CroppedDataset(Dataset):
+    def __init__(self, dataset_name, DEBUG=False):
+        super().__init__(dataset_name, DEBUG)
+
+    def get_item(self, item_name):
+        with Image.open(os.path.join(self.root, item_name+'-depth.png')) as di:
+            dpt_um = np.array(di)
+        with Image.open(os.path.join(self.root, item_name+'-label.png')) as li:
+            labels = np.array(li)
+
+
+        rgb_labels = labels.copy()
+        meta = scio.loadmat(os.path.join(self.root, item_name+'-meta.mat'))
+
+        cls_id_lst = meta['cls_indexes'].flatten().astype(np.uint32)
+        select_class_idx = min(5, len(cls_id_lst) - 1)
+        cls_id_lst = cls_id_lst[[select_class_idx]]
+
+
+        foreground = ma.getmaskarray(ma.masked_equal(labels, cls_id_lst[0]))
+        dpt_um = dpt_um * foreground
+        labels = labels * foreground
+
+        if item_name[:8] != 'data_syn' and int(item_name[5:9]) >= 60:
+            K = config.intrinsic_matrix['ycb_K2']
+        else:
+            K = config.intrinsic_matrix['ycb_K1']
+
+        with Image.open(os.path.join(self.root, item_name+'-color.png')) as ri:
+            if self.add_noise:
+                ri = self.trancolor(ri)
+            rgb = np.array(ri)[:, :, :3]
+        rgb = rgb * np.repeat(foreground[:, :, np.newaxis], 3, axis=2)
+
+        rnd_typ = 'syn' if 'syn' in item_name else 'real'
+        cam_scale = meta['factor_depth'].astype(np.float32)[0][0]
+        msk_dp = dpt_um > 1e-6
+
+        if self.add_noise and rnd_typ == 'syn':
+            rgb = self.rgb_add_noise(rgb)
+            rgb, dpt_um = self.add_real_back(rgb, rgb_labels, dpt_um, msk_dp)
+            if self.rng.rand() > 0.8:
+                rgb = self.rgb_add_noise(rgb)
+
+        dpt_um = bs_utils.fill_missing(dpt_um, cam_scale, 1)
+        msk_dp = dpt_um > 1e-6
+
+        dpt_mm = (dpt_um.copy()/10).astype(np.uint16)
+        nrm_map = normalSpeed.depth_normal(
+            dpt_mm, K[0][0], K[1][1], 5, 2000, 20, False
+        )
+        if self.debug:
+            show_nrm_map = ((nrm_map + 1.0) * 127).astype(np.uint8)
+            imshow("nrm_map", show_nrm_map)
+
+        dpt_m = dpt_um.astype(np.float32) / cam_scale
+        dpt_xyz = self.dpt_2_pcld(dpt_m, 1.0, K)
+
+        choose = msk_dp.flatten().nonzero()[0].astype(np.uint32)
+        if len(choose) < 400:
+            return None
+        choose_2 = np.array([i for i in range(len(choose))])
+        if len(choose_2) < 400:
+            return None
+        if len(choose_2) > config.n_sample_points:
+            c_mask = np.zeros(len(choose_2), dtype=int)
+            c_mask[:config.n_sample_points] = 1
+            np.random.shuffle(c_mask)
+            choose_2 = choose_2[c_mask.nonzero()]
+        else:
+            choose_2 = np.pad(choose_2, (0, config.n_sample_points-len(choose_2)), 'wrap')
+        choose = np.array(choose)[choose_2]
+
+        sf_idx = np.arange(choose.shape[0])
+        np.random.shuffle(sf_idx)
+        choose = choose[sf_idx]
+
+        cld = dpt_xyz.reshape(-1, 3)[choose, :]
+        rgb_pt = rgb.reshape(-1, 3)[choose, :].astype(np.float32)
+        nrm_pt = nrm_map[:, :, :3].reshape(-1, 3)[choose, :]
+        labels_pt = labels.flatten()[choose]
+        choose = np.array([choose])
+        cld_rgb_nrm = np.concatenate((cld, rgb_pt, nrm_pt), axis=1).transpose(1, 0)
+
+        
+        RTs, kp3ds, ctr3ds, cls_ids, kp_targ_ofst, ctr_targ_ofst = self.get_pose_gt_info(
+            cld, labels_pt, cls_id_lst, meta
+        )
+
+        h, w = rgb_labels.shape
+        dpt_6c = np.concatenate((dpt_xyz, nrm_map[:, :, :3]), axis=2).transpose(2, 0, 1)
+        rgb = np.transpose(rgb, (2, 0, 1)) # hwc2chw
+
+        xyz_lst = [dpt_xyz.transpose(2, 0, 1)] # c, h, w
+        msk_lst = [dpt_xyz[2, :, :] > 1e-8]
+
+        for i in range(3):
+            scale = pow(2, i+1)
+            nh, nw = h // pow(2, i+1), w // pow(2, i+1)
+            ys, xs = np.mgrid[:nh, :nw]
+            xyz_lst.append(xyz_lst[0][:, ys*scale, xs*scale])
+            msk_lst.append(xyz_lst[-1][2, :, :] > 1e-8)
+        sr2dptxyz = {
+            pow(2, ii): item.reshape(3, -1).transpose(1, 0) for ii, item in enumerate(xyz_lst)
+        }
+        sr2msk = {
+            pow(2, ii): item.reshape(-1) for ii, item in enumerate(msk_lst)
+        }
+
+        rgb_ds_sr = [4, 8, 8, 8]
+        n_ds_layers = 4
+        pcld_sub_s_r = [4, 4, 4, 4]
+        inputs = {}
+        # DownSample stage
+        for i in range(n_ds_layers):
+            nei_idx = DP.knn_search(
+                cld[None, ...], cld[None, ...], 16
+            ).astype(np.int32).squeeze(0)
+            sub_pts = cld[:cld.shape[0] // pcld_sub_s_r[i], :]
+            pool_i = nei_idx[:cld.shape[0] // pcld_sub_s_r[i], :]
+            up_i = DP.knn_search(
+                sub_pts[None, ...], cld[None, ...], 1
+            ).astype(np.int32).squeeze(0)
+            inputs['cld_xyz%d'%i] = cld.astype(np.float32).copy()
+            inputs['cld_nei_idx%d'%i] = nei_idx.astype(np.int32).copy()
+            inputs['cld_sub_idx%d'%i] = pool_i.astype(np.int32).copy()
+            inputs['cld_interp_idx%d'%i] = up_i.astype(np.int32).copy()
+            nei_r2p = DP.knn_search(
+                sr2dptxyz[rgb_ds_sr[i]][None, ...], sub_pts[None, ...], 16
+            ).astype(np.int32).squeeze(0)
+            inputs['r2p_ds_nei_idx%d'%i] = nei_r2p.copy()
+            nei_p2r = DP.knn_search(
+                sub_pts[None, ...], sr2dptxyz[rgb_ds_sr[i]][None, ...], 1
+            ).astype(np.int32).squeeze(0)
+            inputs['p2r_ds_nei_idx%d'%i] = nei_p2r.copy()
+            cld = sub_pts
+
+        n_up_layers = 3
+        rgb_up_sr = [4, 2, 2]
+        for i in range(n_up_layers):
+            r2p_nei = DP.knn_search(
+                sr2dptxyz[rgb_up_sr[i]][None, ...],
+                inputs['cld_xyz%d'%(n_ds_layers-i-1)][None, ...], 16
+            ).astype(np.int32).squeeze(0)
+            inputs['r2p_up_nei_idx%d'%i] = r2p_nei.copy()
+            p2r_nei = DP.knn_search(
+                inputs['cld_xyz%d'%(n_ds_layers-i-1)][None, ...],
+                sr2dptxyz[rgb_up_sr[i]][None, ...], 1
+            ).astype(np.int32).squeeze(0)
+            inputs['p2r_up_nei_idx%d'%i] = p2r_nei.copy()
+
+        show_rgb = rgb.transpose(1, 2, 0).copy()[:, :, ::-1]
+        if self.debug:
+            for ip, xyz in enumerate(xyz_lst):
+                pcld = xyz.reshape(3, -1).transpose(1, 0)
+                p2ds = bs_utils.project_p3d(pcld, cam_scale, K)
+                print(show_rgb.shape, pcld.shape)
+                srgb = bs_utils.paste_p2ds(show_rgb.copy(), p2ds, (0, 0, 255))
+                imshow("rz_pcld_%d" % ip, srgb)
+                p2ds = bs_utils.project_p3d(inputs['cld_xyz%d'%ip], cam_scale, K)
+                srgb1 = bs_utils.paste_p2ds(show_rgb.copy(), p2ds, (0, 0, 255))
+                imshow("rz_pcld_%d_rnd" % ip, srgb1)
+
+        item_dict = dict(
+            rgb=rgb.astype(np.uint8),  # [c, h, w]
+            cld_rgb_nrm=cld_rgb_nrm.astype(np.float32),  # [9, npts]
+            choose=choose.astype(np.int32),  # [1, npts]
+            labels=labels_pt.astype(np.int32),  # [npts]
+            rgb_labels=rgb_labels.astype(np.int32),  # [h, w]
+            dpt_map_m=dpt_m.astype(np.float32),  # [h, w]
+            RTs=RTs.astype(np.float32),
+            kp_targ_ofst=kp_targ_ofst.astype(np.float32),
+            ctr_targ_ofst=ctr_targ_ofst.astype(np.float32),
+            cls_ids=cls_ids.astype(np.int32),
+            ctr_3ds=ctr3ds.astype(np.float32),
+            kp_3ds=kp3ds.astype(np.float32),
+        )
+        item_dict.update(inputs)
+        if self.debug:
+            extra_d = dict(
+                dpt_xyz_nrm=dpt_6c.astype(np.float32),  # [6, h, w]
+                cam_scale=np.array([cam_scale]).astype(np.float32),
+                K=K.astype(np.float32),
+            )
+            item_dict.update(extra_d)
+            item_dict['normal_map'] = nrm_map[:, :, :3].astype(np.float32)
+        return item_dict
+
+
+
+
 
 def main():
     # config.mini_batch_size = 1
@@ -445,7 +645,6 @@ def main():
                     exit()
                 else:
                     continue
-
 
 if __name__ == "__main__":
     main()
