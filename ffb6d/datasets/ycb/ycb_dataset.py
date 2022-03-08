@@ -19,7 +19,11 @@ except:
 import normalSpeed
 from models.RandLA.helper_tool import DataProcessing as DP
 
+from scipy.spatial.transform import Rotation as R
 import numpy.ma as ma
+import logging
+logger = logging.getLogger()
+
 
 
 config = Config(ds_name='ycb')
@@ -58,9 +62,56 @@ class Dataset():
             self.add_noise = False
             self.path = 'datasets/ycb/dataset_config/test_data_list.txt'
             self.all_lst = bs_utils.read_lines(self.path)
-        print("{}_dataset_size: ".format(dataset_name), len(self.all_lst))
+        logger.info("{}_dataset_size: ".format(dataset_name), len(self.all_lst))
         self.root = config.ycb_root
-        self.sym_cls_ids = [13, 16, 19, 20, 21]
+        
+        class_file = open('datasets/ycb/dataset_config/classes.txt')
+        class_id = 1
+        self.cld = {}
+
+        self.frontd = {}
+
+        #symmetries for objects
+        self.symmd = {}
+        self.symmetry_obj_idx = [12, 15, 18, 19, 20]
+
+        supported_symm_types = {'radial'}
+
+        while 1:
+            class_input = class_file.readline()
+            if not class_input:
+                break
+            logger.info("{} {}".format(class_id, class_input[:-1]))
+            input_file = open('{0}/models/{1}/front.xyz'.format(self.root, class_input[:-1]))
+            self.frontd[class_id] = []
+            while 1:
+                input_line = input_file.readline()
+                if not input_line or len(input_line) <= 1:
+                    break
+                input_line = input_line.rstrip().split(' ')
+                self.frontd[class_id].append([float(input_line[0]), float(input_line[1]), float(input_line[2])])
+            self.frontd[class_id] = np.array(self.frontd[class_id])
+            input_file.close()
+
+            #since class_is 1-indexed but self.symmetry_obj_idx is 0-indexed...
+            if class_id - 1 in self.symmetry_obj_idx:
+                input_file = open('{0}/models/{1}/symm.txt'.format(self.root, class_input[:-1]))
+                self.symmd[class_id] = []
+                while 1:
+                    symm_type = input_file.readline().rstrip()
+                    if not symm_type or len(symm_type) == 0:
+                        break
+                    if symm_type not in supported_symm_types:
+                        raise Exception("Invalid symm_type " + symm_type)
+                    number_of_symms = input_file.readline().rstrip()
+                    self.symmd[class_id].append((symm_type, number_of_symms))
+                input_file.close()
+            else:
+                self.symmd[class_id] = []
+            class_id += 1
+        logger.info(self.symmd)
+        logger.info(self.frontd)
+
 
     def real_syn_gen(self):
         if self.rng.rand() > 0.8:
@@ -177,6 +228,27 @@ class Dataset():
         )
         dpt_3d = dpt_3d * msk[:, :, None]
         return dpt_3d
+
+    def rotation_matrix_of_axis_angle(self, axis, theta):
+        """
+        Return the rotation matrix associated with counterclockwise rotation about
+        the given axis by theta radians.
+        """
+        axis = np.copy(axis)
+        axis /= np.linalg.norm(axis)
+        r = R.from_rotvec(axis * theta)
+        return r.as_matrix()
+
+    def get_random_rotation_around_symmetry_axis(self, axis, symm_type, num_symm):
+        if symm_type == "radial":
+            if num_symm == "inf":
+                angle = np.random.uniform(0, 2 * np.pi)
+            else:
+                angles = np.arange(0, 2 * np.pi, 2 * np.pi / int(num_symm))
+                angle = np.random.choice(angles)
+            return self.rotation_matrix_of_axis_angle(axis, angle).squeeze()
+        else:
+            raise Exception("Invalid symm_type " + symm_type)
 
     def get_item(self, item_name):
         with Image.open(os.path.join(self.root, item_name+'-depth.png')) as di:
@@ -363,6 +435,21 @@ class Dataset():
         ctr_targ_ofst = np.zeros((config.n_sample_points, 3))
         for i, cls_id in enumerate(cls_id_lst):
             r = meta['poses'][:, :, i][:, 0:3]
+
+            #right now, we are only dealing with one "front" axis
+            #front = np.expand_dims(self.frontd[cls_id], 0) * .1
+            front = self.frontd[cls_id]
+
+            #PERFORM SYMMETRY ROTATION AUGMENTATION
+            #symmetries
+            symm = self.symmd[cls_id]
+
+            #calculate other peaks based on size of symm
+            if len(symm) > 0:
+                symm_type, num_symm = symm[0]
+                symmetry_augmentation = self.get_random_rotation_around_symmetry_axis(front, symm_type, num_symm)
+                r = r @ symmetry_augmentation
+
             t = np.array(meta['poses'][:, :, i][:, 3:4].flatten()[:, None])
             RT = np.concatenate((r, t), axis=1)
             RTs[i] = RT

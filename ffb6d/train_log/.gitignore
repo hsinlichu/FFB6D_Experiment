@@ -4,3 +4,4 @@ ycb/checkpoints/*.tar
 linemod/eval_results
 linemod/train_info
 linemod/checkpoints/*.tar
+ycb/log/
