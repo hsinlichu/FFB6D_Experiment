@@ -102,13 +102,13 @@ parser.add_argument("-view_dpt", action="store_true")
 parser.add_argument('-debug', action='store_true')
 
 parser.add_argument('--local_rank', type=int, default=0)
-parser.add_argument('--gpu_id', type=list, default=[0])
+parser.add_argument('--gpu_id', type=list, default=[0, 1])
 parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N')
 parser.add_argument('-g', '--gpus', default=1, type=int,
                     help='number of gpus per node')
 parser.add_argument('-nr', '--nr', default=0, type=int,
                     help='ranking within the nodes')
-parser.add_argument('--gpu', type=str, default="1")
+parser.add_argument('--gpu', type=str, default="0, 1")
 parser.add_argument('--deterministic', action='store_true')
 parser.add_argument('--keep_batchnorm_fp32', default=True)
 parser.add_argument('--opt_level', default="O0", type=str,
@@ -117,7 +117,7 @@ parser.add_argument('--comment', type=str, default="")
 
 args = parser.parse_args()
 
-#os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 comment = "{}_{}".format(str(datetime.now().strftime(r'%m%d_%H%M%S')), args.comment)
 
 resultDirPath = Path("train_log/") / "ycb" / "log" / comment
@@ -150,14 +150,11 @@ def get_lr(optimizer):
 def checkpoint_state(model=None, optimizer=None, best_prec=None, epoch=None, it=None):
     optim_state = optimizer.state_dict() if optimizer is not None else None
     if model is not None:
-        '''
         if isinstance(model, torch.nn.DataParallel) or \
                 isinstance(model, torch.nn.parallel.DistributedDataParallel):
             model_state = model.module.state_dict()
         else:
             model_state = model.state_dict()
-        '''
-        model_state = model.state_dict()
     else:
         model_state = None
 
@@ -535,26 +532,24 @@ def train():
         torch.manual_seed(args.local_rank)
         torch.set_printoptions(precision=10)
     torch.cuda.set_device(args.local_rank)
-    '''
     torch.distributed.init_process_group(
         backend='nccl',
         init_method='env://',
     )
-    '''
     torch.manual_seed(0)
 
     if not args.eval_net:
         train_ds = Dataset('train')
-        #train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds)
-        train_sampler = None#torch.utils.data.Sampler(train_ds)
+        train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds)
+        #train_sampler = None#torch.utils.data.Sampler(train_ds)
         train_loader = torch.utils.data.DataLoader(
             train_ds, batch_size=config.mini_batch_size, shuffle=False,
             drop_last=True, num_workers=4, sampler=train_sampler, pin_memory=True
         )
 
         val_ds = Dataset('test')
-        #val_sampler = torch.utils.data.distributed.DistributedSampler(val_ds)
-        val_sampler = None#torch.utils.data.Sampler(val_ds)
+        val_sampler = torch.utils.data.distributed.DistributedSampler(val_ds)
+        #val_sampler = None#torch.utils.data.Sampler(val_ds)
         val_loader = torch.utils.data.DataLoader(
             val_ds, batch_size=config.val_mini_batch_size, shuffle=False,
             drop_last=False, num_workers=4, sampler=val_sampler
@@ -599,12 +594,10 @@ def train():
             assert checkpoint_status is not None, "Failed loadding model."
 
     if not args.eval_net:
-        '''
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[args.local_rank], output_device=args.local_rank,
             find_unused_parameters=True
         )
-        '''
         clr_div = 6
         lr_scheduler = CyclicLR(
             optimizer, base_lr=1e-5, max_lr=1e-3,
