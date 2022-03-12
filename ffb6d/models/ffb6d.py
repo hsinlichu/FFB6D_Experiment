@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from models.cnn.pspnet import PSPNet
 import models.pytorch_utils as pt_utils
 from models.RandLA.RandLANet import Network as RandLANet
-
+import time
 
 psp_models = {
     'resnet18': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=512, deep_features_size=256, backend='resnet18'),
@@ -12,6 +12,14 @@ psp_models = {
     'resnet50': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=2048, deep_features_size=1024, backend='resnet50'),
 }
 
+
+prepare = 0
+downsample = 0
+upsample = 0
+segmentation = 0
+center = 0
+keypoint = 0
+fusion = 0
 
 class FFB6D(nn.Module):
     def __init__(
@@ -215,6 +223,7 @@ class FFB6D(nn.Module):
         Returns:
             end_points:
         """
+        timer_start = time.time()
         # ###################### prepare stages #############################
         if not end_points:
             end_points = {}
@@ -226,7 +235,12 @@ class FFB6D(nn.Module):
         p_emb = self.rndla_pre_stages(p_emb)
         p_emb = p_emb.unsqueeze(dim=3)  # Batch*channel*npoints*1
 
+        global prepare
+        prepare += time.time() - timer_start
+
+        timer_start = time.time()
         # ###################### encoding stages #############################
+        global fusion
         ds_emb = []
         for i_ds in range(4):
             # encode rgb downsampled feature
@@ -242,6 +256,7 @@ class FFB6D(nn.Module):
             if i_ds == 0:
                 ds_emb.append(f_encoder_i)
 
+            fusion_start = time.time()
             # fuse point feauture to rgb feature
             p2r_emb = self.ds_fuse_p2r_pre_layers[i_ds](p_emb0)
             p2r_emb = self.nearest_interpolation(
@@ -261,7 +276,12 @@ class FFB6D(nn.Module):
                 torch.cat((p_emb0, r2p_emb), dim=1)
             )
             ds_emb.append(p_emb)
+            fusion += time.time() - fusion_start
 
+        global downsample
+        downsample += time.time() - timer_start
+
+        timer_start = time.time()
         # ###################### decoding stages #############################
         n_up_layers = len(self.rndla_up_stages)
         for i_up in range(n_up_layers-1):
@@ -278,6 +298,7 @@ class FFB6D(nn.Module):
             )
             p_emb0 = f_decoder_i
 
+            fusion_start = time.time()
             # fuse point feauture to rgb feature
             p2r_emb = self.up_fuse_p2r_pre_layers[i_up](p_emb0)
             p2r_emb = self.nearest_interpolation(
@@ -296,6 +317,7 @@ class FFB6D(nn.Module):
             p_emb = self.up_fuse_r2p_fuse_layers[i_up](
                 torch.cat((p_emb0, r2p_emb), dim=1)
             )
+            fusion += time.time() - fusion_start
 
         # final upsample layers:
         rgb_emb = self.cnn_up_stages[n_up_layers-1](rgb_emb)
@@ -305,6 +327,9 @@ class FFB6D(nn.Module):
         p_emb = self.rndla_up_stages[n_up_layers-1](
             torch.cat([ds_emb[0], f_interp_i], dim=1)
         ).squeeze(-1)
+
+        global upsample
+        upsample += time.time() - timer_start
 
         bs, di, _, _ = rgb_emb.size()
         rgb_emb_c = rgb_emb.view(bs, di, -1)
@@ -318,9 +343,22 @@ class FFB6D(nn.Module):
         rgbd_emb = torch.cat([rgb_emb_c, p_emb], dim=1)
 
         # ###################### prediction stages #############################
+
+        timer_start = time.time()
         rgbd_segs = self.rgbd_seg_layer(rgbd_emb)
+        global segmentation
+        segmentation += time.time() - timer_start
+
+        timer_start = time.time()
         pred_kp_ofs = self.kp_ofst_layer(rgbd_emb)
+        global keypoint
+        keypoint += time.time() - timer_start
+
+        timer_start = time.time()
         pred_ctr_ofs = self.ctr_ofst_layer(rgbd_emb)
+        global center
+        center += time.time() - timer_start
+
 
         pred_kp_ofs = pred_kp_ofs.view(
             bs, self.n_kps, 3, -1
