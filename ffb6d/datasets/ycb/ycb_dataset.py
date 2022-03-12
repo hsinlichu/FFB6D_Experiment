@@ -406,8 +406,8 @@ class Dataset():
             cld_rgb_nrm=cld_rgb_nrm.astype(np.float32),  # [9, npts]
             choose=choose.astype(np.int32),  # [1, npts]
             labels=labels_pt.astype(np.int32),  # [npts]
-            rgb_labels=rgb_labels.astype(np.int32),  # [h, w]
-            dpt_map_m=dpt_m.astype(np.float32),  # [h, w]
+            #rgb_labels=rgb_labels.astype(np.int32),  # [h, w]
+            #dpt_map_m=dpt_m.astype(np.float32),  # [h, w]
             RTs=RTs.astype(np.float32),
             kp_targ_ofst=kp_targ_ofst.astype(np.float32),
             ctr_targ_ofst=ctr_targ_ofst.astype(np.float32),

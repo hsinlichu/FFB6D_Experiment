@@ -55,8 +55,8 @@ class Config:
 
         self.n_total_epoch = 25
         self.mini_batch_size = 3
-        self.val_mini_batch_size = 18 
-        self.test_mini_batch_size = 18
+        self.val_mini_batch_size = 3 
+        self.test_mini_batch_size = 1
 
         self.n_sample_points = 480 * 640 // 24  # Number of input points
         self.n_keypoints = 8

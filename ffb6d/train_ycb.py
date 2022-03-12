@@ -118,7 +118,10 @@ parser.add_argument('--comment', type=str, default="")
 args = parser.parse_args()
 
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-comment = "{}_{}".format(str(datetime.now().strftime(r'%m%d_%H%M%S')), args.comment)
+if args.test:
+        comment = "Test_{}_{}".format(str(datetime.now().strftime(r'%m%d_%H%M%S')), args.comment)
+else:
+        comment = "{}_{}".format(str(datetime.now().strftime(r'%m%d_%H%M%S')), args.comment)
 
 resultDirPath = Path("train_log/") / "ycb" / "log" / comment
 resultDirPath.mkdir(parents=True, exist_ok=True)
@@ -405,15 +408,11 @@ class Trainer(object):
                     self.model, data, is_eval=True, is_test=is_test, finish_test=True,
                     test_pose=test_pose
                 )
-            seg_res_fn = 'seg_res'
+            print(acc_dict)
             for k, v in acc_dict.items():
-                seg_res_fn += '_%s%.2f' % (k, v)
-            with open(os.path.join(config.log_eval_dir, seg_res_fn), 'w') as of:
-                for k, v in acc_dict.items():
-                    logger.info(k, v, file=of)
-        if args.local_rank == 0:
-            #writer.add_scalars('val_acc', acc_dict, it)
-            pass
+                logger.info("{} {}".format(k, v))
+        #if args.local_rank == 0:
+        #    writer.add_scalars('val_acc', acc_dict, it)
 
         return total_loss / count, eval_dict
 
@@ -451,7 +450,7 @@ class Trainer(object):
 
         def is_to_eval(epoch, it):
             # Eval after first 100 iters to test eval function.
-            if it == 100:
+            if it == 10:
                 return True, 1
             wid = tot_iter // clr_div
             if (it // wid) % 2 == 1:
@@ -502,7 +501,7 @@ class Trainer(object):
                 eval_flag, eval_frequency = is_to_eval(epoch, it)
                 if eval_flag and test_loader is not None:
                     logger.info("Epoch {} Iteration {} train loss {}".format(epoch, it, loss))
-                    val_loss, res = self.eval_epoch(test_loader, it=it)
+                    val_loss, res = self.eval_epoch(test_loader, is_test=True, test_pose=args.test_pose, it=it)
                     logger.info("Epoch {} Iteration {} val loss {}".format(epoch, it, val_loss))
 
                     is_best = val_loss < best_loss
@@ -656,7 +655,7 @@ def train():
         )
 
         if start_epoch == config.n_total_epoch:
-            _ = trainer.eval_epoch(val_loader)
+            _ = trainer.eval_epoch(val_loader, is_test=True)
 
 
 if __name__ == "__main__":
