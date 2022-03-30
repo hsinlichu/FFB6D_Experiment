@@ -184,7 +184,7 @@ class Dataset():
         return dpt_3d
 
     def get_item(self, item_name):
-        timer_start = time.time()
+        #timer_start = time.time()
         with Image.open(os.path.join(self.root, item_name+'-depth.png')) as di:
             dpt_um = np.array(di)
         with Image.open(os.path.join(self.root, item_name+'-label.png')) as li:
@@ -205,9 +205,9 @@ class Dataset():
         cam_scale = meta['factor_depth'].astype(np.float32)[0][0]
         msk_dp = dpt_um > 1e-6
 
-        global middle1
-        middle1 += time.time() - timer_start
-        timer_start = time.time()
+        #global middle1
+        #middle1 += time.time() - timer_start
+        #timer_start = time.time()
 
         if self.add_noise and rnd_typ == 'syn':
             rgb = self.rgb_add_noise(rgb)
@@ -228,9 +228,9 @@ class Dataset():
 
         dpt_m = dpt_um.astype(np.float32) / cam_scale
         dpt_xyz = self.dpt_2_pcld(dpt_m, 1.0, K)
-        global middle2
-        middle2 += time.time() - timer_start
-        timer_start = time.time()
+        #global middle2
+        #middle2 += time.time() - timer_start
+        #timer_start = time.time()
 
 
         choose = msk_dp.flatten().nonzero()[0].astype(np.uint32)
@@ -283,10 +283,10 @@ class Dataset():
         sr2msk = {
             pow(2, ii): item.reshape(-1) for ii, item in enumerate(msk_lst)
         }
-        global preprocess
-        preprocess += time.time() - timer_start
+        #global preprocess
+        #preprocess += time.time() - timer_start
 
-        timer_start = time.time()
+        #timer_start = time.time()
         rgb_ds_sr = [4, 8, 8, 8]
         n_ds_layers = 4
         pcld_sub_s_r = [4, 4, 4, 4]
@@ -314,10 +314,10 @@ class Dataset():
             ).astype(np.int32).squeeze(0)
             inputs['p2r_ds_nei_idx%d'%i] = nei_p2r.copy()
             cld = sub_pts
-        global us
-        us += time.time() - timer_start
+        #global us
+        #us += time.time() - timer_start
 
-        timer_start = time.time()
+        #timer_start = time.time()
         n_up_layers = 3
         rgb_up_sr = [4, 2, 2]
         for i in range(n_up_layers):
@@ -343,8 +343,8 @@ class Dataset():
                 p2ds = bs_utils.project_p3d(inputs['cld_xyz%d'%ip], cam_scale, K)
                 srgb1 = bs_utils.paste_p2ds(show_rgb.copy(), p2ds, (0, 0, 255))
                 imshow("rz_pcld_%d_rnd" % ip, srgb1)
-        global ds
-        ds += time.time() - timer_start
+        #global ds
+        #ds += time.time() - timer_start
 
         item_dict = dict(
             rgb=rgb.astype(np.uint8),  # [c, h, w]
@@ -415,8 +415,8 @@ class Dataset():
         return len(self.all_lst)
 
     def __getitem__(self, idx):
-        global overall
-        timer_start = time.time()
+        #global overall
+        #timer_start = time.time()
         if self.dataset_name == 'train':
             item_name = self.real_syn_gen()
             data = self.get_item(item_name)
@@ -426,7 +426,7 @@ class Dataset():
         else:
             item_name = self.all_lst[idx]
             data = self.get_item(item_name)
-        overall += time.time() - timer_start
+        #overall += time.time() - timer_start
         return data
 
 

@@ -297,7 +297,7 @@ def model_fn_decorator(
                     writer.add_scalars('loss', loss_dict, it)
                     writer.add_scalars('train_acc', acc_dict, it)
             if is_test and test_pose:
-                timer_start = time.time()
+                #timer_start = time.time()
                 cld = cu_dt['cld_rgb_nrm'][:, :3, :].permute(0, 2, 1).contiguous()
 
                 if not args.test_gt:
@@ -319,8 +319,8 @@ def model_fn_decorator(
                         cu_dt['RTs'], gt_kp_ofs, cu_dt['kp_3ds'], cu_dt['ctr_3ds'],
                         min_cnt=1, use_ctr_clus_flter=True, use_ctr=True, ds='ycb'
                     )
-                global least_square_time
-                least_square_time += time.time() - timer_start
+                #global least_square_time
+                #least_square_time += time.time() - timer_start
 
         return (
             end_points, loss, info_dict
@@ -380,7 +380,7 @@ class Trainer(object):
         eval_dict = {}
         total_loss = 0.0
         count = 1
-        timer_start = time.time()
+        #timer_start = time.time()
         for i, data in tqdm.tqdm(
             enumerate(d_loader), total=len(d_loader), leave=False, desc="val"
         ):
@@ -390,6 +390,7 @@ class Trainer(object):
             _, loss, eval_res = self.model_fn(
                 self.model, data, is_eval=True, is_test=is_test, test_pose=test_pose
             )
+	    '''
             if i == 99:
                     total_time = time.time() - timer_start
                     print("Dataset")
@@ -412,6 +413,7 @@ class Trainer(object):
                     global least_square_time
                     print("least squares pose recovery time: ", least_square_time)
                     exit()
+	    '''
 
 
 
@@ -508,7 +510,7 @@ class Trainer(object):
             # REF: https://github.com/pytorch/pytorch/issues/5059
             np.random.seed()
             pbar = tqdm.tqdm(train_loader, total=len(train_loader), leave=False, desc="Train|Epoch {}".format(epoch))
-            timer_start = time.time()
+            #timer_start = time.time()
             for batch in pbar:
                 self.model.train()
 
@@ -537,7 +539,7 @@ class Trainer(object):
 
                 eval_flag, eval_frequency = is_to_eval(epoch, it)
                 if eval_flag and test_loader is not None:
-                    total_time = time.time() - timer_start
+                    #total_time = time.time() - timer_start
                     print("Dataset")
                     print("Overall generating time: ", dataset_desc.overall)
                     print("load rgd+depth+label+meta time: ", dataset_desc.middle1)
