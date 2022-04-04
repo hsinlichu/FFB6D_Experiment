@@ -413,9 +413,6 @@ class Trainer(object):
                     exit()
 	    '''
 
-
-
-
             if 'loss_target' in eval_res.keys():
                 total_loss += eval_res['loss_target']
             else:
