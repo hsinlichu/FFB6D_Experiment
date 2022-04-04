@@ -105,7 +105,7 @@ parser.add_argument("-view_dpt", action="store_true")
 parser.add_argument('-debug', action='store_true')
 
 parser.add_argument('--local_rank', type=int, default=0)
-parser.add_argument('--gpu_id', type=list, default=[0])
+parser.add_argument('--gpu_id', type=list, default=[0, 1])
 parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N')
 parser.add_argument('-g', '--gpus', default=1, type=int,
                     help='number of gpus per node')
@@ -120,7 +120,7 @@ parser.add_argument('--comment', type=str, default="test")
 
 args = parser.parse_args()
 
-os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+#os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 comment = "{}_{}".format(str(datetime.now().strftime(r'%m%d_%H%M%S')), args.comment)
 
 resultDirPath = Path("train_log/") / "ycb" / "log" / comment
@@ -245,7 +245,7 @@ def model_fn_decorator(
             model.eval()
         with torch.set_grad_enabled(not is_eval):
             cu_dt = {}
-            # device = torch.device('cuda:{}'.format(args.local_rank))
+            device = torch.device('cuda:{}'.format(args.local_rank))
             for key in data.keys():
                 if data[key].dtype in [np.float32, np.uint8]:
                     cu_dt[key] = torch.from_numpy(data[key].astype(np.float32)).cuda()
@@ -653,12 +653,10 @@ def train():
             assert checkpoint_status is not None, "Failed loadding model."
 
     if not args.eval_net:
-        '''
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[args.local_rank], output_device=args.local_rank,
             find_unused_parameters=True
         )
-        '''
         clr_div = 6
         lr_scheduler = CyclicLR(
             optimizer, base_lr=1e-5, max_lr=1e-3,
