@@ -45,8 +45,7 @@ from datetime import datetime
 import logging
 logger = logging.getLogger()
 
-
-least_square_time = 0
+#least_square_time = 0
 
 config = Config()
 bs_utils = Basic_Utils(config)
@@ -140,7 +139,6 @@ logger.addHandler(consoleHandler)
 lr_clip = 1e-5
 bnm_clip = 1e-2
 
-
 def worker_init_fn(worker_id):
     np.random.seed(np.random.get_state()[1][0] + worker_id)
 
@@ -210,7 +208,6 @@ def load_checkpoint(model=None, optimizer=None, filename="checkpoint"):
         logger.info("==> Checkpoint '{}' not found".format(filename))
         return None
 
-
 def view_labels(rgb_chw, cld_cn, labels, K=config.intrinsic_matrix['ycb_K1']):
     rgb_hwc = np.transpose(rgb_chw[0].numpy(), (1, 2, 0)).astype("uint8").copy()
     cld_nc = np.transpose(cld_cn.numpy(), (1, 0)).copy()
@@ -227,7 +224,6 @@ def view_labels(rgb_chw, cld_cn, labels, K=config.intrinsic_matrix['ycb_K1']):
         colors.append(c)
     show = bs_utils.draw_p2ds(rgb_hwc, p2ds, 3, colors)
     return show
-
 
 def model_fn_decorator(
     criterion, criterion_of, test=False,

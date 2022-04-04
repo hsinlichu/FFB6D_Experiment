@@ -23,12 +23,12 @@ import time
 config = Config(ds_name='ycb')
 bs_utils = Basic_Utils(config)
 
-middle1 = 0
-middle2 = 0
-preprocess = 0
-overall = 0
-us = 0
-ds = 0
+#middle1 = 0
+#middle2 = 0
+#preprocess = 0
+#overall = 0
+#us = 0
+#ds = 0
 
 class Dataset():
 
