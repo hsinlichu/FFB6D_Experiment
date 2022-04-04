@@ -593,7 +593,7 @@ def train():
     )
     torch.manual_seed(0)
 
-    global train_ds
+    #global train_ds
     if not args.eval_net:
         train_ds = dataset_desc.Dataset('train')
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds)
