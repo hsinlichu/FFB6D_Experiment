@@ -37,7 +37,8 @@ class FFB6D(nn.Module):
 
         self.cnn_pre_stages = nn.Sequential(
             cnn.feats.conv1,  # stride = 2, [bs, c, 240, 320]
-            cnn.feats.bn1, cnn.feats.relu,
+            #cnn.feats.bn1, cnn.feats.relu,
+            cnn.feats.relu,
             cnn.feats.maxpool  # stride = 2, [bs, 64, 120, 160]
         )
         self.rndla_pre_stages = rndla.fc0
@@ -64,26 +65,27 @@ class FFB6D(nn.Module):
             self.ds_fuse_r2p_pre_layers.append(
                 pt_utils.Conv2d(
                     self.ds_rgb_oc[i], self.ds_rndla_oc[i], kernel_size=(1, 1),
-                    bn=True
+                    bn=False
+                    #bn=True
                 )
             )
             self.ds_fuse_r2p_fuse_layers.append(
                 pt_utils.Conv2d(
                     self.ds_rndla_oc[i]*2, self.ds_rndla_oc[i], kernel_size=(1, 1),
-                    bn=True
+                    bn=False
                 )
             )
 
             self.ds_fuse_p2r_pre_layers.append(
                 pt_utils.Conv2d(
                     self.ds_rndla_oc[i], self.ds_rgb_oc[i], kernel_size=(1, 1),
-                    bn=True
+                    bn=False
                 )
             )
             self.ds_fuse_p2r_fuse_layers.append(
                 pt_utils.Conv2d(
                     self.ds_rgb_oc[i]*2, self.ds_rgb_oc[i], kernel_size=(1, 1),
-                    bn=True
+                    bn=False
                 )
             )
 
@@ -113,26 +115,26 @@ class FFB6D(nn.Module):
             self.up_fuse_r2p_pre_layers.append(
                 pt_utils.Conv2d(
                     self.up_rgb_oc[i], self.up_rndla_oc[i], kernel_size=(1, 1),
-                    bn=True
+                    bn=False
                 )
             )
             self.up_fuse_r2p_fuse_layers.append(
                 pt_utils.Conv2d(
                     self.up_rndla_oc[i]*2, self.up_rndla_oc[i], kernel_size=(1, 1),
-                    bn=True
+                    bn=False
                 )
             )
 
             self.up_fuse_p2r_pre_layers.append(
                 pt_utils.Conv2d(
                     self.up_rndla_oc[i], self.up_rgb_oc[i], kernel_size=(1, 1),
-                    bn=True
+                    bn=False
                 )
             )
             self.up_fuse_p2r_fuse_layers.append(
                 pt_utils.Conv2d(
                     self.up_rgb_oc[i]*2, self.up_rgb_oc[i], kernel_size=(1, 1),
-                    bn=True
+                    bn=False
                 )
             )
 
@@ -142,25 +144,25 @@ class FFB6D(nn.Module):
 
         self.rgbd_seg_layer = (
             pt_utils.Seq(self.up_rndla_oc[-1] + self.up_rgb_oc[-1])
-            .conv1d(128, bn=True, activation=nn.ReLU())
-            .conv1d(128, bn=True, activation=nn.ReLU())
-            .conv1d(128, bn=True, activation=nn.ReLU())
+            .conv1d(128, bn=False, activation=nn.ReLU())
+            .conv1d(128, bn=False, activation=nn.ReLU())
+            .conv1d(128, bn=False, activation=nn.ReLU())
             .conv1d(n_classes, activation=None)
         )
 
         self.ctr_ofst_layer = (
             pt_utils.Seq(self.up_rndla_oc[-1]+self.up_rgb_oc[-1])
-            .conv1d(128, bn=True, activation=nn.ReLU())
-            .conv1d(128, bn=True, activation=nn.ReLU())
-            .conv1d(128, bn=True, activation=nn.ReLU())
+            .conv1d(128, bn=False, activation=nn.ReLU())
+            .conv1d(128, bn=False, activation=nn.ReLU())
+            .conv1d(128, bn=False, activation=nn.ReLU())
             .conv1d(3, activation=None)
         )
 
         self.kp_ofst_layer = (
             pt_utils.Seq(self.up_rndla_oc[-1]+self.up_rgb_oc[-1])
-            .conv1d(128, bn=True, activation=nn.ReLU())
-            .conv1d(128, bn=True, activation=nn.ReLU())
-            .conv1d(128, bn=True, activation=nn.ReLU())
+            .conv1d(128, bn=False, activation=nn.ReLU())
+            .conv1d(128, bn=False, activation=nn.ReLU())
+            .conv1d(128, bn=False, activation=nn.ReLU())
             .conv1d(n_kps*3, activation=None)
         )
 

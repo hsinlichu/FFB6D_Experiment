@@ -293,23 +293,23 @@ class Dataset():
         inputs = {}
         # DownSample stage
         for i in range(n_ds_layers):
-            nei_idx = DP.knn_search(
+            nei_idx = DP.approximated_knn_search(
                 cld[None, ...], cld[None, ...], 16
             ).astype(np.int32).squeeze(0)
             sub_pts = cld[:cld.shape[0] // pcld_sub_s_r[i], :]
             pool_i = nei_idx[:cld.shape[0] // pcld_sub_s_r[i], :]
-            up_i = DP.knn_search(
+            up_i = DP.approximated_knn_search(
                 sub_pts[None, ...], cld[None, ...], 1
             ).astype(np.int32).squeeze(0)
             inputs['cld_xyz%d'%i] = cld.astype(np.float32).copy()
             inputs['cld_nei_idx%d'%i] = nei_idx.astype(np.int32).copy()
             inputs['cld_sub_idx%d'%i] = pool_i.astype(np.int32).copy()
             inputs['cld_interp_idx%d'%i] = up_i.astype(np.int32).copy()
-            nei_r2p = DP.knn_search(
+            nei_r2p = DP.approximated_knn_search(
                 sr2dptxyz[rgb_ds_sr[i]][None, ...], sub_pts[None, ...], 16
             ).astype(np.int32).squeeze(0)
             inputs['r2p_ds_nei_idx%d'%i] = nei_r2p.copy()
-            nei_p2r = DP.knn_search(
+            nei_p2r = DP.approximated_knn_search(
                 sub_pts[None, ...], sr2dptxyz[rgb_ds_sr[i]][None, ...], 1
             ).astype(np.int32).squeeze(0)
             inputs['p2r_ds_nei_idx%d'%i] = nei_p2r.copy()
@@ -321,12 +321,12 @@ class Dataset():
         n_up_layers = 3
         rgb_up_sr = [4, 2, 2]
         for i in range(n_up_layers):
-            r2p_nei = DP.knn_search(
+            r2p_nei = DP.approximated_knn_search(
                 sr2dptxyz[rgb_up_sr[i]][None, ...],
                 inputs['cld_xyz%d'%(n_ds_layers-i-1)][None, ...], 16
             ).astype(np.int32).squeeze(0)
             inputs['r2p_up_nei_idx%d'%i] = r2p_nei.copy()
-            p2r_nei = DP.knn_search(
+            p2r_nei = DP.approximated_knn_search(
                 inputs['cld_xyz%d'%(n_ds_layers-i-1)][None, ...],
                 sr2dptxyz[rgb_up_sr[i]][None, ...], 1
             ).astype(np.int32).squeeze(0)

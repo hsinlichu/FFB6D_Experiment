@@ -105,7 +105,7 @@ parser.add_argument("-view_dpt", action="store_true")
 parser.add_argument('-debug', action='store_true')
 
 parser.add_argument('--local_rank', type=int, default=0)
-parser.add_argument('--gpu_id', type=list, default=[0])
+parser.add_argument('--gpu_id', type=list, default=[0, 1])
 parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N')
 parser.add_argument('-g', '--gpus', default=1, type=int,
                     help='number of gpus per node')
@@ -390,7 +390,7 @@ class Trainer(object):
             _, loss, eval_res = self.model_fn(
                 self.model, data, is_eval=True, is_test=is_test, test_pose=test_pose
             )
-	    '''
+            '''
             if i == 99:
                     total_time = time.time() - timer_start
                     print("Dataset")
@@ -413,10 +413,7 @@ class Trainer(object):
                     global least_square_time
                     print("least squares pose recovery time: ", least_square_time)
                     exit()
-	    '''
-
-
-
+            '''
 
             if 'loss_target' in eval_res.keys():
                 total_loss += eval_res['loss_target']
@@ -454,6 +451,7 @@ class Trainer(object):
 
         return total_loss / count, eval_dict
 
+
     def train(
         self,
         start_it,
@@ -486,6 +484,16 @@ class Trainer(object):
 
         logger.info("Totally train %d iters per gpu." % tot_iter)
 
+	# https://discuss.pytorch.org/t/how-to-close-batchnorm-when-using-torchvision-models/21812
+        def deactivate_batchnorm(m):
+            if isinstance(m, nn.BatchNorm2d):
+                print(m.param)
+                m.reset_parameters()
+                m.eval()
+                with torch.no_grad():
+                    m.weight.fill_(1.0)
+                    m.bias.zero_()
+        
         def is_to_eval(epoch, it):
             # Eval after first 100 iters to test eval function.
             if it == 100:
@@ -513,6 +521,7 @@ class Trainer(object):
             #timer_start = time.time()
             for batch in pbar:
                 self.model.train()
+                self.model.apply(deactivate_batchnorm)
 
                 self.optimizer.zero_grad()
                 _, loss, res = self.model_fn(self.model, batch, it=it)
@@ -539,7 +548,8 @@ class Trainer(object):
 
                 eval_flag, eval_frequency = is_to_eval(epoch, it)
                 if eval_flag and test_loader is not None:
-                    #total_time = time.time() - timer_start
+                    '''
+                    total_time = time.time() - timer_start
                     print("Dataset")
                     print("Overall generating time: ", dataset_desc.overall)
                     print("load rgd+depth+label+meta time: ", dataset_desc.middle1)
@@ -557,9 +567,9 @@ class Trainer(object):
                     print("segmentation prediction time: ", model_desc.segmentation)
                     print("keypoint prediction time: ", model_desc.keypoint)
                     print("center prediction time: ", model_desc.center)
-                    
-
                     exit()
+                    '''
+
                     logger.info("Epoch {} Iteration {} train loss {}".format(epoch, it, loss))
                     val_loss, res = self.eval_epoch(test_loader, it=it)
                     logger.info("Epoch {} Iteration {} val loss {}".format(epoch, it, val_loss))
@@ -591,36 +601,34 @@ def train():
         torch.manual_seed(args.local_rank)
         torch.set_printoptions(precision=10)
     torch.cuda.set_device(args.local_rank)
-    '''
     torch.distributed.init_process_group(
         backend='nccl',
         init_method='env://',
     )
-    '''
     torch.manual_seed(0)
 
     global train_ds
     if not args.eval_net:
         train_ds = dataset_desc.Dataset('train')
-        #train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds)
-        train_sampler = None#torch.utils.data.Sampler(train_ds)
+        train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds)
+        #train_sampler = None#torch.utils.data.Sampler(train_ds)
         train_loader = torch.utils.data.DataLoader(
             train_ds, batch_size=config.mini_batch_size, shuffle=False,
-            drop_last=True, num_workers=0, sampler=train_sampler, pin_memory=True
+            drop_last=True, num_workers=4, sampler=train_sampler, pin_memory=True
         )
 
         val_ds = dataset_desc.Dataset('test')
-        #val_sampler = torch.utils.data.distributed.DistributedSampler(val_ds)
-        val_sampler = None#torch.utils.data.Sampler(val_ds)
+        val_sampler = torch.utils.data.distributed.DistributedSampler(val_ds)
+        #val_sampler = None#torch.utils.data.Sampler(val_ds)
         val_loader = torch.utils.data.DataLoader(
             val_ds, batch_size=config.val_mini_batch_size, shuffle=False,
-            drop_last=False, num_workers=0, sampler=val_sampler
+            drop_last=False, num_workers=4, sampler=val_sampler
         )
     else:
         test_ds = dataset_desc.Dataset('test')
         test_loader = torch.utils.data.DataLoader(
             test_ds, batch_size=config.test_mini_batch_size, shuffle=False,
-            num_workers=0
+            num_workers=4
         )
 
     rndla_cfg = ConfigRandLA
@@ -629,6 +637,7 @@ def train():
         n_kps=config.n_keypoints
     )
     model = convert_syncbn_model(model)
+    print(model)
     device = torch.device('cuda:{}'.format(args.local_rank))
     logger.info('local_rank: {}'.format(args.local_rank))
     model.to(device)
@@ -656,12 +665,10 @@ def train():
             assert checkpoint_status is not None, "Failed loadding model."
 
     if not args.eval_net:
-        '''
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[args.local_rank], output_device=args.local_rank,
             find_unused_parameters=True
         )
-        '''
         clr_div = 6
         lr_scheduler = CyclicLR(
             optimizer, base_lr=1e-5, max_lr=1e-3,

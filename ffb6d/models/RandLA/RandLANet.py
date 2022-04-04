@@ -13,7 +13,7 @@ class Network(nn.Module):
         super().__init__()
         self.config = config
 
-        self.fc0 = pt_utils.Conv1d(config.in_c, 8, kernel_size=1, bn=True)
+        self.fc0 = pt_utils.Conv1d(config.in_c, 8, kernel_size=1, bn=False)
 
         self.dilated_res_blocks = nn.ModuleList()
         d_in = 8
@@ -23,7 +23,7 @@ class Network(nn.Module):
             d_in = 2 * d_out
 
         d_out = d_in
-        self.decoder_0 = pt_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=True)
+        self.decoder_0 = pt_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=False)
 
         self.decoder_blocks = nn.ModuleList()
         for j in range(self.config.num_layers):
@@ -33,10 +33,10 @@ class Network(nn.Module):
             else:
                 d_in = 4 * self.config.d_out[-4]
                 d_out = 2 * self.config.d_out[-4]
-            self.decoder_blocks.append(pt_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=True))
+            self.decoder_blocks.append(pt_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=False))
 
-        self.fc1 = pt_utils.Conv2d(d_out, 64, kernel_size=(1,1), bn=True)
-        self.fc2 = pt_utils.Conv2d(64, 32, kernel_size=(1,1), bn=True)
+        self.fc1 = pt_utils.Conv2d(d_out, 64, kernel_size=(1,1), bn=False)
+        self.fc2 = pt_utils.Conv2d(64, 32, kernel_size=(1,1), bn=False)
         self.dropout = nn.Dropout(0.5)
         self.fc3 = pt_utils.Conv2d(32, self.config.num_classes, kernel_size=(1,1), bn=False, activation=None)
 
@@ -171,10 +171,10 @@ class Dilated_res_block(nn.Module):
     def __init__(self, d_in, d_out):
         super().__init__()
 
-        self.mlp1 = pt_utils.Conv2d(d_in, d_out//2, kernel_size=(1,1), bn=True)
+        self.mlp1 = pt_utils.Conv2d(d_in, d_out//2, kernel_size=(1,1), bn=False)
         self.lfa = Building_block(d_out)
-        self.mlp2 = pt_utils.Conv2d(d_out, d_out*2, kernel_size=(1, 1), bn=True, activation=None)
-        self.shortcut = pt_utils.Conv2d(d_in, d_out*2, kernel_size=(1,1), bn=True, activation=None)
+        self.mlp2 = pt_utils.Conv2d(d_out, d_out*2, kernel_size=(1, 1), bn=False, activation=None)
+        self.shortcut = pt_utils.Conv2d(d_in, d_out*2, kernel_size=(1,1), bn=False, activation=None)
 
     def forward(self, feature, xyz, neigh_idx):
         f_pc = self.mlp1(feature)  # Batch*channel*npoints*1
@@ -187,10 +187,10 @@ class Dilated_res_block(nn.Module):
 class Building_block(nn.Module):
     def __init__(self, d_out):  #  d_in = d_out//2
         super().__init__()
-        self.mlp1 = pt_utils.Conv2d(10, d_out//2, kernel_size=(1,1), bn=True)
+        self.mlp1 = pt_utils.Conv2d(10, d_out//2, kernel_size=(1,1), bn=False)
         self.att_pooling_1 = Att_pooling(d_out, d_out//2)
 
-        self.mlp2 = pt_utils.Conv2d(d_out//2, d_out//2, kernel_size=(1, 1), bn=True)
+        self.mlp2 = pt_utils.Conv2d(d_out//2, d_out//2, kernel_size=(1, 1), bn=False)
         self.att_pooling_2 = Att_pooling(d_out, d_out)
 
     def forward(self, xyz, feature, neigh_idx):  # feature: Batch*channel*npoints*1
@@ -238,7 +238,7 @@ class Att_pooling(nn.Module):
     def __init__(self, d_in, d_out):
         super().__init__()
         self.fc = nn.Conv2d(d_in, d_in, (1, 1), bias=False)
-        self.mlp = pt_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=True)
+        self.mlp = pt_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=False)
 
     def forward(self, feature_set):
 
