@@ -120,7 +120,7 @@ parser.add_argument('--comment', type=str, default="test")
 
 args = parser.parse_args()
 
-#os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 comment = "{}_{}".format(str(datetime.now().strftime(r'%m%d_%H%M%S')), args.comment)
 
 resultDirPath = Path("train_log/") / "ycb" / "log" / comment
@@ -153,13 +153,11 @@ def get_lr(optimizer):
 def checkpoint_state(model=None, optimizer=None, best_prec=None, epoch=None, it=None):
     optim_state = optimizer.state_dict() if optimizer is not None else None
     if model is not None:
-        '''
         if isinstance(model, torch.nn.DataParallel) or \
                 isinstance(model, torch.nn.parallel.DistributedDataParallel):
             model_state = model.module.state_dict()
         else:
             model_state = model.state_dict()
-        '''
         model_state = model.state_dict()
     else:
         model_state = None
@@ -390,7 +388,7 @@ class Trainer(object):
             _, loss, eval_res = self.model_fn(
                 self.model, data, is_eval=True, is_test=is_test, test_pose=test_pose
             )
-	    '''
+            '''
             if i == 99:
                     total_time = time.time() - timer_start
                     print("Dataset")
@@ -539,7 +537,8 @@ class Trainer(object):
 
                 eval_flag, eval_frequency = is_to_eval(epoch, it)
                 if eval_flag and test_loader is not None:
-                    #total_time = time.time() - timer_start
+                    '''
+                    total_time = time.time() - timer_start
                     print("Dataset")
                     print("Overall generating time: ", dataset_desc.overall)
                     print("load rgd+depth+label+meta time: ", dataset_desc.middle1)
@@ -557,9 +556,9 @@ class Trainer(object):
                     print("segmentation prediction time: ", model_desc.segmentation)
                     print("keypoint prediction time: ", model_desc.keypoint)
                     print("center prediction time: ", model_desc.center)
-                    
-
                     exit()
+                    '''
+
                     logger.info("Epoch {} Iteration {} train loss {}".format(epoch, it, loss))
                     val_loss, res = self.eval_epoch(test_loader, it=it)
                     logger.info("Epoch {} Iteration {} val loss {}".format(epoch, it, val_loss))
@@ -591,36 +590,34 @@ def train():
         torch.manual_seed(args.local_rank)
         torch.set_printoptions(precision=10)
     torch.cuda.set_device(args.local_rank)
-    '''
     torch.distributed.init_process_group(
         backend='nccl',
         init_method='env://',
     )
-    '''
     torch.manual_seed(0)
 
     global train_ds
     if not args.eval_net:
         train_ds = dataset_desc.Dataset('train')
-        #train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds)
-        train_sampler = None#torch.utils.data.Sampler(train_ds)
+        train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds)
+        #train_sampler = None#torch.utils.data.Sampler(train_ds)
         train_loader = torch.utils.data.DataLoader(
             train_ds, batch_size=config.mini_batch_size, shuffle=False,
-            drop_last=True, num_workers=0, sampler=train_sampler, pin_memory=True
+            drop_last=True, num_workers=4, sampler=train_sampler, pin_memory=True
         )
 
         val_ds = dataset_desc.Dataset('test')
-        #val_sampler = torch.utils.data.distributed.DistributedSampler(val_ds)
-        val_sampler = None#torch.utils.data.Sampler(val_ds)
+        val_sampler = torch.utils.data.distributed.DistributedSampler(val_ds)
+        #val_sampler = None#torch.utils.data.Sampler(val_ds)
         val_loader = torch.utils.data.DataLoader(
             val_ds, batch_size=config.val_mini_batch_size, shuffle=False,
-            drop_last=False, num_workers=0, sampler=val_sampler
+            drop_last=False, num_workers=4, sampler=val_sampler
         )
     else:
         test_ds = dataset_desc.Dataset('test')
         test_loader = torch.utils.data.DataLoader(
             test_ds, batch_size=config.test_mini_batch_size, shuffle=False,
-            num_workers=0
+            num_workers=4
         )
 
     rndla_cfg = ConfigRandLA
