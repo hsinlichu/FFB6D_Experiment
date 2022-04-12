@@ -25,6 +25,7 @@ try:
 except ImportError:
     from cv2 import imshow, waitKey
 
+import open3d as o3d
 
 parser = argparse.ArgumentParser(description="Arg parser")
 parser.add_argument(
@@ -100,7 +101,23 @@ def cal_view_pred_pose(model, data, epoch=0, obj_id=-1):
         _, classes_rgbd = torch.max(end_points['pred_rgbd_segs'], 1)
 
         pcld = cu_dt['cld_rgb_nrm'][:, :3, :].permute(0, 2, 1).contiguous()
-        img = segmentic_segmentation_visualization(cu_dt['rgb'], classes_rgbd, pcld)
+
+        ### visualizing the point clouds after filling holes
+        origin_pcld = cu_dt['origin_pcld'].squeeze().cpu().numpy()
+        filled_removed_pcld = cu_dt['filled_removed_pcld'].squeeze().cpu().numpy()
+
+        vis_dir = os.path.join(config.log_eval_dir, "filled_holes_vis")
+        ensure_fd(vis_dir)
+        f_pth_origin = os.path.join(vis_dir, "{}_origin.ply".format(epoch))
+        f_pth_filled_holes = os.path.join(vis_dir, "{}_filled_holes.ply".format(epoch))
+
+        o3dtarget = o3d.geometry.PointCloud()
+        o3dtarget.points = o3d.utility.Vector3dVector(origin_pcld)
+        o3d.io.write_point_cloud(f_pth_origin, o3dtarget)
+
+        o3dmodel = o3d.geometry.PointCloud()
+        o3dmodel.points = o3d.utility.Vector3dVector(filled_removed_pcld)
+        o3d.io.write_point_cloud(f_pth_filled_holes, o3dmodel)
         '''
         if args.dataset == "ycb":
             pred_cls_ids, pred_pose_lst, _ = cal_frame_poses(
@@ -135,12 +152,10 @@ def cal_view_pred_pose(model, data, epoch=0, obj_id=-1):
             mesh_p2ds = bs_utils.project_p3d(mesh_pts, 1.0, K)
             color = bs_utils.get_label_color(obj_id, n_obj=22, mode=2)
             np_rgb = bs_utils.draw_p2ds(np_rgb, mesh_p2ds, color=color)
-        '''
-        vis_dir = os.path.join(config.log_eval_dir, "segmentation_vis")
+
+        vis_dir = os.path.join(config.log_eval_dir, "pose_vis")
         ensure_fd(vis_dir)
         f_pth = os.path.join(vis_dir, "{}.jpg".format(epoch))
-        cv2.imwrite(f_pth, img)
-        '''
         if args.dataset == 'ycb':
             bgr = np_rgb
             ori_bgr = ori_rgb
@@ -153,6 +168,15 @@ def cal_view_pred_pose(model, data, epoch=0, obj_id=-1):
             imshow("original_rgb", ori_bgr)
             waitKey()
         '''
+        '''
+        ### visualizing the segmentic segmentation
+        img = segmentic_segmentation_visualization(cu_dt['rgb'], classes_rgbd, pcld)
+        vis_dir = os.path.join(config.log_eval_dir, "segmentation_vis")
+        ensure_fd(vis_dir)
+        f_pth = os.path.join(vis_dir, "{}.jpg".format(epoch))
+        cv2.imwrite(f_pth, img)
+        '''
+
     if epoch == 0:
         print("\n\nResults saved in {}".format(vis_dir))
 

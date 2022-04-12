@@ -187,6 +187,7 @@ class Dataset():
         #timer_start = time.time()
         with Image.open(os.path.join(self.root, item_name+'-depth.png')) as di:
             dpt_um = np.array(di)
+        origin_dpt_um = dpt_um
         with Image.open(os.path.join(self.root, item_name+'-label.png')) as li:
             labels = np.array(li)
         rgb_labels = labels.copy()
@@ -231,6 +232,11 @@ class Dataset():
         #global middle2
         #middle2 += time.time() - timer_start
         #timer_start = time.time()
+
+
+        filled_removed_pcld = dpt_xyz.reshape(-1, 3)
+        origin_dpt_m = origin_dpt_um.astype(np.float32) / cam_scale
+        origin_pcld = self.dpt_2_pcld(origin_dpt_m, 1.0, K).reshape(-1, 3)
 
 
         choose = msk_dp.flatten().nonzero()[0].astype(np.uint32)
@@ -293,23 +299,23 @@ class Dataset():
         inputs = {}
         # DownSample stage
         for i in range(n_ds_layers):
-            nei_idx = DP.knn_search(
+            nei_idx = DP.approximated_knn_search(
                 cld[None, ...], cld[None, ...], 16
             ).astype(np.int32).squeeze(0)
             sub_pts = cld[:cld.shape[0] // pcld_sub_s_r[i], :]
             pool_i = nei_idx[:cld.shape[0] // pcld_sub_s_r[i], :]
-            up_i = DP.knn_search(
+            up_i = DP.approximated_knn_search(
                 sub_pts[None, ...], cld[None, ...], 1
             ).astype(np.int32).squeeze(0)
             inputs['cld_xyz%d'%i] = cld.astype(np.float32).copy()
             inputs['cld_nei_idx%d'%i] = nei_idx.astype(np.int32).copy()
             inputs['cld_sub_idx%d'%i] = pool_i.astype(np.int32).copy()
             inputs['cld_interp_idx%d'%i] = up_i.astype(np.int32).copy()
-            nei_r2p = DP.knn_search(
+            nei_r2p = DP.approximated_knn_search(
                 sr2dptxyz[rgb_ds_sr[i]][None, ...], sub_pts[None, ...], 16
             ).astype(np.int32).squeeze(0)
             inputs['r2p_ds_nei_idx%d'%i] = nei_r2p.copy()
-            nei_p2r = DP.knn_search(
+            nei_p2r = DP.approximated_knn_search(
                 sub_pts[None, ...], sr2dptxyz[rgb_ds_sr[i]][None, ...], 1
             ).astype(np.int32).squeeze(0)
             inputs['p2r_ds_nei_idx%d'%i] = nei_p2r.copy()
@@ -321,12 +327,12 @@ class Dataset():
         n_up_layers = 3
         rgb_up_sr = [4, 2, 2]
         for i in range(n_up_layers):
-            r2p_nei = DP.knn_search(
+            r2p_nei = DP.approximated_knn_search(
                 sr2dptxyz[rgb_up_sr[i]][None, ...],
                 inputs['cld_xyz%d'%(n_ds_layers-i-1)][None, ...], 16
             ).astype(np.int32).squeeze(0)
             inputs['r2p_up_nei_idx%d'%i] = r2p_nei.copy()
-            p2r_nei = DP.knn_search(
+            p2r_nei = DP.approximated_knn_search(
                 inputs['cld_xyz%d'%(n_ds_layers-i-1)][None, ...],
                 sr2dptxyz[rgb_up_sr[i]][None, ...], 1
             ).astype(np.int32).squeeze(0)
@@ -337,7 +343,6 @@ class Dataset():
             for ip, xyz in enumerate(xyz_lst):
                 pcld = xyz.reshape(3, -1).transpose(1, 0)
                 p2ds = bs_utils.project_p3d(pcld, cam_scale, K)
-                print(show_rgb.shape, pcld.shape)
                 srgb = bs_utils.paste_p2ds(show_rgb.copy(), p2ds, (0, 0, 255))
                 imshow("rz_pcld_%d" % ip, srgb)
                 p2ds = bs_utils.project_p3d(inputs['cld_xyz%d'%ip], cam_scale, K)
@@ -351,14 +356,17 @@ class Dataset():
             cld_rgb_nrm=cld_rgb_nrm.astype(np.float32),  # [9, npts]
             choose=choose.astype(np.int32),  # [1, npts]
             labels=labels_pt.astype(np.int32),  # [npts]
-            rgb_labels=rgb_labels.astype(np.int32),  # [h, w]
-            dpt_map_m=dpt_m.astype(np.float32),  # [h, w]
+            #rgb_labels=rgb_labels.astype(np.int32),  # [h, w]
+            #dpt_map_m=dpt_m.astype(np.float32),  # [h, w]
             RTs=RTs.astype(np.float32),
             kp_targ_ofst=kp_targ_ofst.astype(np.float32),
             ctr_targ_ofst=ctr_targ_ofst.astype(np.float32),
             cls_ids=cls_ids.astype(np.int32),
             ctr_3ds=ctr3ds.astype(np.float32),
             kp_3ds=kp3ds.astype(np.float32),
+
+            filled_removed_pcld=filled_removed_pcld.astype(np.float32),
+            origin_pcld=origin_pcld.astype(np.float32),
         )
         item_dict.update(inputs)
         if self.debug:
