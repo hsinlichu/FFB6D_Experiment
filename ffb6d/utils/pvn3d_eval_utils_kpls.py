@@ -61,6 +61,25 @@ def best_fit_transform(A, B):
     return T
 
 
+def segmentic_segmentation_visualization(rgb, predicted, pcld):
+    rgb = rgb.cpu().numpy().astype("uint8")[0].transpose(1, 2, 0).copy()
+    predicted = predicted.squeeze().cpu().numpy()
+    pcld = pcld.squeeze().cpu().numpy()
+
+    pred_cls_ids = np.unique(predicted)
+
+    img = rgb
+
+    for icls, cls_id in enumerate(pred_cls_ids):
+        cls_msk = predicted == cls_id
+        projected_pcld = bs_utils.project_p3d(pcld[cls_msk], 1000.0)
+        color = bs_utils.get_label_color(cls_id.item())
+        img = bs_utils.draw_p2ds(img, projected_pcld, r=1, color=color)
+    return img
+
+
+
+
 # ###############################YCB Evaluation###############################
 def cal_frame_poses(
     pcld, mask, ctr_of, pred_kp_of, use_ctr, n_cls, use_ctr_clus_flter,

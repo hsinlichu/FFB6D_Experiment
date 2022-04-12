@@ -170,6 +170,21 @@ class DataProcessing:
         return neighbor_idx.astype(np.int32)
 
     @staticmethod
+    def approximated_knn_search(support_pts, query_pts, k):
+        """
+        :param support_pts: points you have, B*N1*3
+        :param query_pts: points you want to know the neighbour index, B*N2*3
+        :param k: Number of neighbours in knn search
+        :return: neighbor_idx: neighboring points indexes, B*N2*k
+        """
+
+        neighbor_idx = nearest_neighbors.knn_batch(support_pts, query_pts, k, omp=True)
+        #print(support_pts.shape)
+        #print(query_pts.shape)
+        #print(neighbor_idx.shape)
+        return neighbor_idx.astype(np.int32)
+
+    @staticmethod
     def data_aug(xyz, color, labels, idx, num_out):
         num_in = len(xyz)
         dup = np.random.choice(num_in, num_out - num_in)

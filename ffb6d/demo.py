@@ -18,7 +18,7 @@ from common import Config, ConfigRandLA
 from models.ffb6d import FFB6D
 from datasets.ycb.ycb_dataset import Dataset as YCB_Dataset
 from datasets.linemod.linemod_dataset import Dataset as LM_Dataset
-from utils.pvn3d_eval_utils_kpls import cal_frame_poses, cal_frame_poses_lm
+from utils.pvn3d_eval_utils_kpls import cal_frame_poses, cal_frame_poses_lm, segmentic_segmentation_visualization
 from utils.basic_utils import Basic_Utils
 try:
     from neupeak.utils.webcv2 import imshow, waitKey
@@ -100,6 +100,8 @@ def cal_view_pred_pose(model, data, epoch=0, obj_id=-1):
         _, classes_rgbd = torch.max(end_points['pred_rgbd_segs'], 1)
 
         pcld = cu_dt['cld_rgb_nrm'][:, :3, :].permute(0, 2, 1).contiguous()
+        img = segmentic_segmentation_visualization(cu_dt['rgb'], classes_rgbd, pcld)
+        '''
         if args.dataset == "ycb":
             pred_cls_ids, pred_pose_lst, _ = cal_frame_poses(
                 pcld[0], classes_rgbd[0], end_points['pred_ctr_ofs'][0],
@@ -133,9 +135,12 @@ def cal_view_pred_pose(model, data, epoch=0, obj_id=-1):
             mesh_p2ds = bs_utils.project_p3d(mesh_pts, 1.0, K)
             color = bs_utils.get_label_color(obj_id, n_obj=22, mode=2)
             np_rgb = bs_utils.draw_p2ds(np_rgb, mesh_p2ds, color=color)
-        vis_dir = os.path.join(config.log_eval_dir, "pose_vis")
+        '''
+        vis_dir = os.path.join(config.log_eval_dir, "segmentation_vis")
         ensure_fd(vis_dir)
         f_pth = os.path.join(vis_dir, "{}.jpg".format(epoch))
+        cv2.imwrite(f_pth, img)
+        '''
         if args.dataset == 'ycb':
             bgr = np_rgb
             ori_bgr = ori_rgb
@@ -147,6 +152,7 @@ def cal_view_pred_pose(model, data, epoch=0, obj_id=-1):
             imshow("projected_pose_rgb", bgr)
             imshow("original_rgb", ori_bgr)
             waitKey()
+        '''
     if epoch == 0:
         print("\n\nResults saved in {}".format(vis_dir))
 
@@ -160,7 +166,7 @@ def main():
         obj_id = config.lm_obj_dict[args.cls]
     test_loader = torch.utils.data.DataLoader(
         test_ds, batch_size=config.test_mini_batch_size, shuffle=False,
-        num_workers=20
+        num_workers=4
     )
 
     rndla_cfg = ConfigRandLA
@@ -177,7 +183,7 @@ def main():
         )
 
     for i, data in tqdm.tqdm(
-        enumerate(test_loader), leave=False, desc="val"
+        enumerate(test_loader), total=len(test_loader), leave=False, desc="val"
     ):
         cal_view_pred_pose(model, data, epoch=i, obj_id=obj_id)
 
