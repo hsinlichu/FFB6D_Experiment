@@ -187,7 +187,7 @@ class Dataset():
         #timer_start = time.time()
         with Image.open(os.path.join(self.root, item_name+'-depth.png')) as di:
             dpt_um = np.array(di)
-        origin_dpt_um = dpt_um
+        #origin_dpt_um = dpt_um
         with Image.open(os.path.join(self.root, item_name+'-label.png')) as li:
             labels = np.array(li)
         rgb_labels = labels.copy()
@@ -234,9 +234,9 @@ class Dataset():
         #timer_start = time.time()
 
 
-        filled_removed_pcld = dpt_xyz.reshape(-1, 3)
-        origin_dpt_m = origin_dpt_um.astype(np.float32) / cam_scale
-        origin_pcld = self.dpt_2_pcld(origin_dpt_m, 1.0, K).reshape(-1, 3)
+        #filled_removed_pcld = dpt_xyz.reshape(-1, 3)
+        #origin_dpt_m = origin_dpt_um.astype(np.float32) / cam_scale
+        #origin_pcld = self.dpt_2_pcld(origin_dpt_m, 1.0, K).reshape(-1, 3)
 
 
         choose = msk_dp.flatten().nonzero()[0].astype(np.uint32)
@@ -365,8 +365,8 @@ class Dataset():
             ctr_3ds=ctr3ds.astype(np.float32),
             kp_3ds=kp3ds.astype(np.float32),
 
-            filled_removed_pcld=filled_removed_pcld.astype(np.float32),
-            origin_pcld=origin_pcld.astype(np.float32),
+            #filled_removed_pcld=filled_removed_pcld.astype(np.float32),
+            #origin_pcld=origin_pcld.astype(np.float32),
         )
         item_dict.update(inputs)
         if self.debug:

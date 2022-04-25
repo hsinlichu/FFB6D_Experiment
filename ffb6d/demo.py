@@ -102,6 +102,7 @@ def cal_view_pred_pose(model, data, epoch=0, obj_id=-1):
 
         pcld = cu_dt['cld_rgb_nrm'][:, :3, :].permute(0, 2, 1).contiguous()
 
+        '''
         ### visualizing the point clouds after filling holes
         origin_pcld = cu_dt['origin_pcld'].squeeze().cpu().numpy()
         filled_removed_pcld = cu_dt['filled_removed_pcld'].squeeze().cpu().numpy()
@@ -118,6 +119,7 @@ def cal_view_pred_pose(model, data, epoch=0, obj_id=-1):
         o3dmodel = o3d.geometry.PointCloud()
         o3dmodel.points = o3d.utility.Vector3dVector(filled_removed_pcld)
         o3d.io.write_point_cloud(f_pth_filled_holes, o3dmodel)
+        '''
         '''
         if args.dataset == "ycb":
             pred_cls_ids, pred_pose_lst, _ = cal_frame_poses(
@@ -168,14 +170,12 @@ def cal_view_pred_pose(model, data, epoch=0, obj_id=-1):
             imshow("original_rgb", ori_bgr)
             waitKey()
         '''
-        '''
         ### visualizing the segmentic segmentation
         img = segmentic_segmentation_visualization(cu_dt['rgb'], classes_rgbd, pcld)
-        vis_dir = os.path.join(config.log_eval_dir, "segmentation_vis")
+        vis_dir = os.path.join(config.log_eval_dir, "denser_segmentation_vis")
         ensure_fd(vis_dir)
         f_pth = os.path.join(vis_dir, "{}.jpg".format(epoch))
         cv2.imwrite(f_pth, img)
-        '''
 
     if epoch == 0:
         print("\n\nResults saved in {}".format(vis_dir))

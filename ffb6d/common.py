@@ -12,7 +12,7 @@ def ensure_fd(fd):
 class ConfigRandLA:
     k_n = 16  # KNN
     num_layers = 4  # Number of layers
-    num_points = 480 * 640 // 24  # Number of input points
+    num_points = 480 * 640  # Number of input points
     num_classes = 22  # Number of valid classes
     sub_grid_size = 0.06  # preprocess_parameter
 
@@ -58,7 +58,7 @@ class Config:
         self.val_mini_batch_size = 8
         self.test_mini_batch_size = 1
 
-        self.n_sample_points = 480 * 640 // 24  # Number of input points
+        self.n_sample_points = 480 * 640  # Number of input points
         self.n_keypoints = 8
         self.n_min_points = 400
 
